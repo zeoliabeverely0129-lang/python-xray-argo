@@ -1,15 +1,52 @@
 import os
+import json
+import time
+import subprocess
+import base64
+
+# ==========================================
+# 1. 变量定义 (保持原项目逻辑)
+# ==========================================
+UUID = os.environ.get('UUID', 'de09516d-3522-4a0b-b530-503463a56336')
+ARGO_PORT = int(os.environ.get('ARGO_PORT', 8001))
+CFIP = os.environ.get('CFIP', 'www.visa.com.sg')
+CFPORT = int(os.environ.get('CFPORT', 443))
+NAME = os.environ.get('NAME', 'Argo')
+NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')
+NEZHA_PORT = os.environ.get('NEZHA_PORT', '')
+NEZHA_KEY = os.environ.get('NEZHA_KEY', '')
+
+# 获取当前目录
+FILE_PATH = os.getcwd()
+
+# ==========================================
+# 2. 辅助函数
+# ==========================================
+def exec_cmd(cmd):
+    subprocess.run(cmd, shell=True)
+
+def authorize_files(files):
+    for file in files:
+        path = os.path.join(FILE_PATH, file)
+        if os.path.exists(path):
+            os.chmod(path, 0o777)
+
+# ==========================================
+# 3. 主逻辑
+# ==========================================
+if __name__ == "__main__":
+    # 授权文件
     files_to_authorize = ['npm', 'web', 'bot'] if NEZHA_PORT else ['php', 'web', 'bot']
     authorize_files(files_to_authorize)
 
-    # Check TLS
+    # 检查 Nezha TLS 设置 (你提供的原代码逻辑)
     port = NEZHA_SERVER.split(":")[-1] if ":" in NEZHA_SERVER else ""
     if port in ["443", "8443", "2096", "2087", "2083", "2053"]:
         nezha_tls = "true"
     else:
         nezha_tls = "false"
 
-    # Configure nezha
+    # 配置 Nezha
     if NEZHA_SERVER and NEZHA_KEY:
         if not NEZHA_PORT:
             # Generate config.yaml for v1
@@ -37,7 +74,10 @@ uuid: {UUID}"""
             with open(os.path.join(FILE_PATH, 'config.yaml'), 'w') as f:
                 f.write(config_yaml)
 
-    # Generate configuration file
+    # ==========================================
+    # 4. 生成 Xray 配置 (已修复语法和 YouTube 问题)
+    # ==========================================
+    # 这里使用标准的 Python 字典格式，避免缩进错误
     config = {
         "log": {
             "access": "/dev/null",
@@ -86,6 +126,7 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
+                    "metadataOnly": False,
                     "routeOnly": True
                 }
             },
@@ -103,6 +144,7 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
+                    "metadataOnly": False,
                     "routeOnly": True
                 }
             },
@@ -121,6 +163,7 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
+                    "metadataOnly": False,
                     "routeOnly": True
                 }
             }
@@ -136,20 +179,30 @@ uuid: {UUID}"""
                     "type": "field",
                     "protocol": ["quic"],
                     "outboundTag": "block"
+                },
+                {
+                    "type": "field",
+                    "domain": [
+                        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com"
+                    ],
+                    "outboundTag": "direct"
                 }
             ]
         }
     }
-    
-    with open(os.path.join(FILE_PATH, 'config.json'), 'w', encoding='utf-8') as config_file:
-        json.dump(config, config_file, ensure_ascii=False, indent=2)`
 
+    # 写入配置文件 config.json
+    with open(os.path.join(FILE_PATH, 'config.json'), 'w', encoding='utf-8') as config_file:
+        json.dump(config, config_file, ensure_ascii=False, indent=2)
+
+    # ==========================================
+    # 5. 启动服务 (保持原项目逻辑)
+    # ==========================================
     # Run nezha
     if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
         tls_ports = ['443', '8443', '2096', '2087', '2083', '2053']
         nezha_tls = '--tls' if NEZHA_PORT in tls_ports else ''
         command = f"nohup {os.path.join(FILE_PATH, 'npm')} -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {nezha_tls} >/dev/null 2>&1 &"
-
         try:
             exec_cmd(command)
             print('npm is running')
@@ -169,9 +222,13 @@ uuid: {UUID}"""
     else:
         print('NEZHA variable is empty, skipping running')
 
-    # Run sbX
+    # Run Xray (web)
     command = f"nohup {os.path.join(FILE_PATH, 'web')} -c {os.path.join(FILE_PATH, 'config.json')} >/dev/null 2>&1 &"
     try:
         exec_cmd(command)
         print('web is running')
-        time.sleep(1)
+        # 死循环保持进程不退出
+        while True:
+            time.sleep(60)
+    except Exception as e:
+        print(f"web running error: {e}")
