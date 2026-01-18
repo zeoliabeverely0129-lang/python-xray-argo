@@ -1,234 +1,108 @@
 import os
 import json
-import time
-import subprocess
+import requests
 import base64
+import time
+import asyncio
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+import threading
+import websockets
+import socket
+import struct
+from aiohttp import ClientSession
 
-# ==========================================
-# 1. 变量定义 (保持原项目逻辑)
-# ==========================================
-UUID = os.environ.get('UUID', 'de09516d-3522-4a0b-b530-503463a56336')
-ARGO_PORT = int(os.environ.get('ARGO_PORT', 8001))
-CFIP = os.environ.get('CFIP', 'www.visa.com.sg')
-CFPORT = int(os.environ.get('CFPORT', 443))
-NAME = os.environ.get('NAME', 'Argo')
-NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')
-NEZHA_PORT = os.environ.get('NEZHA_PORT', '')
-NEZHA_KEY = os.environ.get('NEZHA_KEY', '')
+# Constants for proxy configuration
+PORT = int(os.environ.get('PORT', '3000'))  # Proxy server port
+YOUTUBE_URL = "https://www.youtube.com"  # Base YouTube URL
 
-# 获取当前目录
-FILE_PATH = os.getcwd()
+# Simple Proxy Handler
+class ProxyRequestHandler(BaseHTTPRequestHandler):
+    async def do_GET(self):
+        parsed_url = urlparse(self.path)
+        youtube_url = f"{YOUTUBE_URL}{parsed_url.path}"
 
-# ==========================================
-# 2. 辅助函数
-# ==========================================
-def exec_cmd(cmd):
-    subprocess.run(cmd, shell=True)
+        # For now, just print the URL to make sure we are intercepting requests
+        print(f"Forwarding request to: {youtube_url}")
 
-def authorize_files(files):
-    for file in files:
-        path = os.path.join(FILE_PATH, file)
-        if os.path.exists(path):
-            os.chmod(path, 0o777)
+        # Forward the request to the YouTube server
+        response = await self.proxy_request(youtube_url)
 
-# ==========================================
-# 3. 主逻辑
-# ==========================================
-if __name__ == "__main__":
-    # 授权文件
-    files_to_authorize = ['npm', 'web', 'bot'] if NEZHA_PORT else ['php', 'web', 'bot']
-    authorize_files(files_to_authorize)
+        # Send back the response
+        self.send_response(response.status_code)
+        self.send_header("Content-Type", response.headers['Content-Type'])
+        self.end_headers()
+        self.wfile.write(response.content)
 
-    # 检查 Nezha TLS 设置 (你提供的原代码逻辑)
-    port = NEZHA_SERVER.split(":")[-1] if ":" in NEZHA_SERVER else ""
-    if port in ["443", "8443", "2096", "2087", "2083", "2053"]:
-        nezha_tls = "true"
-    else:
-        nezha_tls = "false"
-
-    # 配置 Nezha
-    if NEZHA_SERVER and NEZHA_KEY:
-        if not NEZHA_PORT:
-            # Generate config.yaml for v1
-            config_yaml = f"""
-client_secret: {NEZHA_KEY}
-debug: false
-disable_auto_update: true
-disable_command_execute: false
-disable_force_update: true
-disable_nat: false
-disable_send_query: false
-gpu: false
-insecure_tls: false
-ip_report_period: 1800
-report_delay: 4
-server: {NEZHA_SERVER}
-skip_connection_count: false
-skip_procs_count: false
-temperature: false
-tls: {nezha_tls}
-use_gitee_to_upgrade: false
-use_ipv6_country_code: false
-uuid: {UUID}"""
-
-            with open(os.path.join(FILE_PATH, 'config.yaml'), 'w') as f:
-                f.write(config_yaml)
-
-    # ==========================================
-    # 4. 生成 Xray 配置 (已修复语法和 YouTube 问题)
-    # ==========================================
-    # 这里使用标准的 Python 字典格式，避免缩进错误
-    config = {
-        "log": {
-            "access": "/dev/null",
-            "error": "/dev/null",
-            "loglevel": "none"
-        },
-        "inbounds": [
-            {
-                "port": ARGO_PORT,
-                "protocol": "vless",
-                "settings": {
-                    "clients": [{"id": UUID, "flow": "xtls-rprx-vision"}],
-                    "decryption": "none",
-                    "fallbacks": [
-                        {"dest": 3001},
-                        {"path": "/vless-argo", "dest": 3002},
-                        {"path": "/vmess-argo", "dest": 3003},
-                        {"path": "/trojan-argo", "dest": 3004}
-                    ]
-                },
-                "streamSettings": {"network": "tcp"}
-            },
-            {
-                "port": 3001,
-                "listen": "127.0.0.1",
-                "protocol": "vless",
-                "settings": {
-                    "clients": [{"id": UUID}],
-                    "decryption": "none"
-                },
-                "streamSettings": {"network": "ws", "security": "none"}
-            },
-            {
-                "port": 3002,
-                "listen": "127.0.0.1",
-                "protocol": "vless",
-                "settings": {
-                    "clients": [{"id": UUID, "level": 0}],
-                    "decryption": "none"
-                },
-                "streamSettings": {
-                    "network": "ws",
-                    "security": "none",
-                    "wsSettings": {"path": "/vless-argo"}
-                },
-                "sniffing": {
-                    "enabled": True,
-                    "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
-                    "routeOnly": True
-                }
-            },
-            {
-                "port": 3003,
-                "listen": "127.0.0.1",
-                "protocol": "vmess",
-                "settings": {
-                    "clients": [{"id": UUID, "alterId": 0}]
-                },
-                "streamSettings": {
-                    "network": "ws",
-                    "wsSettings": {"path": "/vmess-argo"}
-                },
-                "sniffing": {
-                    "enabled": True,
-                    "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
-                    "routeOnly": True
-                }
-            },
-            {
-                "port": 3004,
-                "listen": "127.0.0.1",
-                "protocol": "trojan",
-                "settings": {
-                    "clients": [{"password": UUID}]
-                },
-                "streamSettings": {
-                    "network": "ws",
-                    "security": "none",
-                    "wsSettings": {"path": "/trojan-argo"}
-                },
-                "sniffing": {
-                    "enabled": True,
-                    "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
-                    "routeOnly": True
-                }
+    async def proxy_request(self, url):
+        """Send the HTTP request to YouTube and return the response."""
+        try:
+            headers = {
+                'User-Agent': self.headers.get('User-Agent'),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
             }
-        ],
-        "outbounds": [
-            {"protocol": "freedom", "tag": "direct"},
-            {"protocol": "blackhole", "tag": "block"}
-        ],
-        "routing": {
-            "domainStrategy": "IPIfNonMatch",
-            "rules": [
-                {
-                    "type": "field",
-                    "protocol": ["quic"],
-                    "outboundTag": "block"
-                },
-                {
-                    "type": "field",
-                    "domain": [
-                        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com"
-                    ],
-                    "outboundTag": "direct"
-                }
-            ]
-        }
-    }
 
-    # 写入配置文件 config.json
-    with open(os.path.join(FILE_PATH, 'config.json'), 'w', encoding='utf-8') as config_file:
-        json.dump(config, config_file, ensure_ascii=False, indent=2)
-
-    # ==========================================
-    # 5. 启动服务 (保持原项目逻辑)
-    # ==========================================
-    # Run nezha
-    if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
-        tls_ports = ['443', '8443', '2096', '2087', '2083', '2053']
-        nezha_tls = '--tls' if NEZHA_PORT in tls_ports else ''
-        command = f"nohup {os.path.join(FILE_PATH, 'npm')} -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {nezha_tls} >/dev/null 2>&1 &"
-        try:
-            exec_cmd(command)
-            print('npm is running')
-            time.sleep(1)
+            async with ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    return response
         except Exception as e:
-            print(f"npm running error: {e}")
+            print(f"Error proxying request: {e}")
+            return None
 
-    elif NEZHA_SERVER and NEZHA_KEY:
-        # Run V1
-        command = f"nohup {FILE_PATH}/php -c \"{FILE_PATH}/config.yaml\" >/dev/null 2>&1 &"
-        try:
-            exec_cmd(command)
-            print('php is running')
-            time.sleep(1)
-        except Exception as e:
-            print(f"php running error: {e}")
-    else:
-        print('NEZHA variable is empty, skipping running')
+    def log_message(self, format, *args):
+        pass  # Suppress server logs
 
-    # Run Xray (web)
-    command = f"nohup {os.path.join(FILE_PATH, 'web')} -c {os.path.join(FILE_PATH, 'config.json')} >/dev/null 2>&1 &"
+# WebSocket handler
+async def proxy_websocket(url):
     try:
-        exec_cmd(command)
-        print('web is running')
-        # 死循环保持进程不退出
-        while True:
-            time.sleep(60)
+        async with websockets.connect(url) as websocket:
+            # Send and receive WebSocket data as necessary
+            while True:
+                message = await websocket.recv()
+                print(f"Received WebSocket message: {message}")
+                # Forward WebSocket message back to client (proxy)
+                await websocket.send(message)
     except Exception as e:
-        print(f"web running error: {e}")
+        print(f"WebSocket proxy error: {e}")
+
+# UDP proxy server
+def udp_proxy_server(local_host='0.0.0.0', local_port=1080, remote_host='8.8.8.8', remote_port=53):
+    """Create a UDP proxy server."""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.bind((local_host, local_port))
+
+    print(f"UDP proxy server listening on {local_host}:{local_port} and forwarding to {remote_host}:{remote_port}...")
+    while True:
+        # Receive UDP data
+        data, addr = server_socket.recvfrom(1024)
+
+        # Send UDP data to the remote server (forwarding)
+        server_socket.sendto(data, (remote_host, remote_port))
+
+        # You could modify this to relay the data in a more sophisticated manner
+        print(f"Forwarded UDP packet from {addr} to {remote_host}:{remote_port}")
+
+# Function to start the proxy server
+def run_proxy_server():
+    print(f"Starting proxy server on port {PORT}...")
+    server = HTTPServer(('0.0.0.0', PORT), ProxyRequestHandler)
+    print(f"Server running on port {PORT}...")
+    server.serve_forever()
+
+# Asynchronous setup and running
+def run_async():
+    loop = asyncio.get_event_loop()
+    
+    # Start the HTTP proxy server
+    loop.run_in_executor(None, run_proxy_server)
+    
+    # Start the UDP proxy server (you can adjust the ports as needed)
+    loop.run_in_executor(None, udp_proxy_server, '0.0.0.0', 1080, '8.8.8.8', 53)
+
+    loop.run_forever()
+
+if __name__ == "__main__":
+    run_async()
