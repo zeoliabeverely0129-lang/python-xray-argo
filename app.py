@@ -86,7 +86,6 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
                     "routeOnly": True
                 }
             },
@@ -104,7 +103,6 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
                     "routeOnly": True
                 }
             },
@@ -123,7 +121,6 @@ uuid: {UUID}"""
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
-                    "metadataOnly": False,
                     "routeOnly": True
                 }
             }
@@ -132,7 +129,6 @@ uuid: {UUID}"""
             {"protocol": "freedom", "tag": "direct"},
             {"protocol": "blackhole", "tag": "block"}
         ],
-        # 👇👇👇 这里就是你原代码缺失的部分，我帮你补上了 👇👇👇
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
@@ -143,10 +139,10 @@ uuid: {UUID}"""
                 }
             ]
         }
-        # 👆👆👆 补全结束 👆👆👆
     }
+    
     with open(os.path.join(FILE_PATH, 'config.json'), 'w', encoding='utf-8') as config_file:
-        json.dump(config, config_file, ensure_ascii=False, indent=2)
+        json.dump(config, config_file, ensure_ascii=False, indent=2)`
 
     # Run nezha
     if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
